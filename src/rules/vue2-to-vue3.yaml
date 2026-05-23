@@ -1,0 +1,258 @@
+# Vue 2 → Vue 3 AST Transformation Rules
+#
+# Each rule maps a Vue 2 pattern to its Vue 3 equivalent.
+# The tool attempts AST-based matching first; if confidence < threshold,
+# it falls back to the LLM with these rules as context.
+
+rules:
+  # ── Lifecycle hooks ──────────────────────────────────────────
+  - name: lifecycle-beforeDestroy-to-beforeUnmount
+    old: beforeDestroy
+    new: beforeUnmount
+    confidence: high
+
+  - name: lifecycle-destroyed-to-unmounted
+    old: destroyed
+    new: unmounted
+    confidence: high
+
+  - name: lifecycle-beforeCreate
+    old: beforeCreate
+    new: setup
+    note: "beforeCreate runs before setup() in Vue 3. Merge logic into setup()."
+    confidence: low
+
+  - name: lifecycle-created
+    old: created
+    new: setup
+    note: "created runs after setup() in Vue 3. Move logic into setup()."
+    confidence: low
+
+  # ── Global API changes ───────────────────────────────────────
+  - name: Vue-extend
+    old_pattern: "Vue.extend({...})"
+    new: "defineComponent({...})"
+    import_needed:
+      source: vue
+      specifier: defineComponent
+    confidence: high
+
+  - name: Vue-set
+    old_pattern: "Vue.set(target, key, value)"
+    new: "target[key] = value"
+    note: "Vue 3 reactivity is Proxy-based — no need for Vue.set."
+    confidence: high
+
+  - name: Vue-delete
+    old_pattern: "Vue.delete(target, key)"
+    new: "delete target[key]"
+    confidence: high
+
+  - name: Vue-filter-remove
+    old_pattern: "Vue.filter("
+    new: null
+    note: "Filters are removed. Replace with computed properties or methods."
+    confidence: low
+
+  # ── Event bus ────────────────────────────────────────────────
+  - name: event-bus-on
+    old_pattern: "$on("
+    new: null
+    note: "$on is removed. Use mitt, provide/inject, or a composable."
+    confidence: low
+
+  - name: event-bus-off
+    old_pattern: "$off("
+    new: null
+    note: "$off is removed. Use mitt, provide/inject, or a composable."
+    confidence: low
+
+  - name: event-bus-emit
+    old_pattern: "$once("
+    new: null
+    note: "$once is removed."
+    confidence: low
+
+  # ── v-model changes ──────────────────────────────────────────
+  - name: v-model-prop-event
+    old_pattern: "model: { prop: ..., event: ... }"
+    new: "v-model argument: v-model:customProp"
+    note: "v-model component contract changed. Use v-model:propName syntax."
+    confidence: medium
+
+  - name: v-model-value-to-modelValue
+    old: "value"
+    context: "v-model prop"
+    new: "modelValue"
+    confidence: medium
+
+  - name: v-model-input-to-update
+    old: "input"
+    context: "v-model event"
+    new: "update:modelValue"
+    confidence: medium
+
+  - name: v-bind-sync-to-v-model
+    old_pattern: "v-bind:propName.sync"
+    new: "v-model:propName"
+    note: ".sync modifier replaced by v-model:propName"
+    confidence: high
+
+  # ── Slots ────────────────────────────────────────────────────
+  - name: slot-attribute-to-v-slot
+    old_pattern: 'slot="slotName"'
+    new: "v-slot:slotName"
+    confidence: high
+
+  - name: slot-scope-to-v-slot
+    old_pattern: 'slot-scope="props"'
+    new: 'v-slot:default="props"'
+    confidence: high
+
+  - name: scopedSlots-to-slots
+    old: "$scopedSlots"
+    new: "$slots"
+    confidence: high
+
+  # ── Key modifier changes ─────────────────────────────────────
+  - name: keycode-modifiers-removed
+    old_pattern: "@keyup.13"
+    new: "@keyup.enter"
+    note: "Numeric keyCode modifiers are removed. Use kebab-case key names."
+    confidence: medium
+
+  # ── Functional components ────────────────────────────────────
+  - name: functional-component
+    old_pattern: "functional: true"
+    new: null
+    note: "Functional components are plain functions in Vue 3. No special flag needed."
+    confidence: low
+
+  # ── render function changes ──────────────────────────────────
+  - name: render-h-import
+    old_pattern: "render(h) {"
+    new: null
+    note: "h is no longer passed as argument. Import it from 'vue': import { h } from 'vue'"
+    confidence: high
+
+  # ── VNode / Listeners / Attrs ────────────────────────────────
+  - name: listeners-to-attrs
+    old: "$listeners"
+    new: "$attrs"
+    note: "$listeners merged into $attrs in Vue 3."
+    confidence: high
+
+  - name: native-modifier-removed
+    old_pattern: "@click.native"
+    new: null
+    note: ".native modifier removed. Events in $attrs now fall through automatically."
+    confidence: high
+
+  # ── Transition class changes ─────────────────────────────────
+  - name: transition-class-names
+    old: "v-enter"
+    new: "v-enter-from"
+    confidence: high
+
+  - name: transition-leave-class
+    old: "v-leave"
+    new: "v-leave-from"
+    confidence: high
+
+  # ── Router (vue-router v3 → v4) ─────────────────────────────
+  - name: router-new-route
+    old: "new Router"
+    new: "createRouter"
+    import_needed:
+      source: vue-router
+      specifier: createRouter
+    confidence: high
+
+  - name: router-mode-to-history
+    old: "mode: 'history'"
+    new: "history: createWebHistory()"
+    import_needed:
+      source: vue-router
+      specifier: createWebHistory
+    confidence: medium
+
+  - name: router-mode-hash
+    old: "mode: 'hash'"
+    new: "history: createWebHashHistory()"
+    import_needed:
+      source: vue-router
+      specifier: createWebHashHistory
+    confidence: medium
+
+  - name: router-base
+    old: "base: "
+    new: null
+    note: "base option removed. Pass as first argument to createWebHistory(base)."
+    confidence: medium
+
+  - name: router-link-append
+    old: "append"
+    new: null
+    note: "append prop removed from router-link."
+    confidence: medium
+
+  - name: router-link-tag
+    old: "tag"
+    new: null
+    note: "tag prop removed from router-link. Use scoped slot instead."
+    confidence: medium
+
+  - name: router-link-exact
+    old: "exact"
+    new: "exact: true"
+    note: "exact attribute on router-link now expects a boolean value."
+    confidence: medium
+
+  # ── Vuex → Pinia hints ───────────────────────────────────────
+  - name: vuex-store
+    old: "$store."
+    new: null
+    note: "Consider migrating to Pinia (recommended Vue 3 state management)."
+    confidence: low
+
+  - name: vuex-mapState
+    old: "mapState"
+    new: null
+    note: "If moving to Pinia, mapState is replaced by setup store access."
+    confidence: low
+
+  - name: vuex-mapGetters
+    old: "mapGetters"
+    new: null
+    note: "If moving to Pinia, mapGetters is replaced by store getters access."
+    confidence: low
+
+  - name: vuex-mapMutations
+    old: "mapMutations"
+    new: null
+    note: "Mutations do not exist in Pinia. Use actions directly."
+    confidence: low
+
+  - name: vuex-mapActions
+    old: "mapActions"
+    new: null
+    note: "If moving to Pinia, use store actions directly."
+    confidence: low
+
+  # ── Emits option ─────────────────────────────────────────────
+  - name: emits-option-recommended
+    old_pattern: null
+    new: "emits: ['eventName']"
+    note: "Vue 3 strongly recommends declaring emits. Add emits option."
+    confidence: medium
+
+  # ── Destroyed alias (Vue 2.2+) ──────────────────────────────
+  - name: beforeDestroy-alias
+    old: "beforeDestroy"
+    note: "beforeDestroy is still available but deprecated. Use beforeUnmount."
+    confidence: high
+
+  - name: destroyed-alias
+    old: "destroyed"
+    note: "destroyed is still available but deprecated. Use unmounted."
+    confidence: high
